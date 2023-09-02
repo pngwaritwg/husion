@@ -18,35 +18,59 @@ import datetime
 import os
 import json
 
+def load_map_from_test_dataset__and_re_ratio():
+    print('loading')
+    path = '../building_entrance_street_dataset/chula_engineering/overview_map/map_subdistrict_1_only_building.png'
+    map_with_building_resolution_4_to_5 = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    map_with_building_resolution_1_to_1 = cv2.resize(map_with_building_resolution_4_to_5, (500,500))
+    path = '../building_entrance_street_dataset/chula_engineering/overview_map/map_with_building_street_and_all_entrances.png'
+    map_with_building_street_and_all_entrances_4_to_5 = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    map_with_building_street_and_all_entrances_resolution_1_to_1 = cv2.resize(map_with_building_street_and_all_entrances_4_to_5, (500,500))
+    path = 'map/chula_engineering/map_without_entrance_and_label.png'
+    cv2.imwrite(path, map_with_building_resolution_1_to_1)
+    path = 'map/chula_engineering/map_with_entrance_and_label.png'
+    cv2.imwrite(path, map_with_building_street_and_all_entrances_resolution_1_to_1)
+
 class SimulationTargetSearch():
-    def __init__(self,system_type='histogram_belief_system',map_name='demo') -> None:
-        self.system_type = system_type
+    def __init__(self,is_histogram_belief_system=True,map_name='demo',is_static_target=True) -> None:
+        self.is_histogram_belief_system = is_histogram_belief_system
+        if is_histogram_belief_system:
+            self.system_type = 'histogram_belief_system'
+        else:
+            self.system_type = 'particle_filter_system'
+        self.is_static_target = is_static_target
         self.map_name = map_name
         self.read_setup_image_for_plot_plan()
         self.initialize_start_robot_target_position()
-        self.radius_reach = 5 # default value
-        self.radius_fov = 5 # default value
+        self.radius_reach = 25 # default value
+        self.radius_fov = 25 # default value
         self.SIN_VALUES = [math.sin(i* (180/math.pi)) for i in range(0,361,1)]
         self.COS_VALUES = [math.cos(i* (180/math.pi)) for i in range(0,361,1)]
         self.setup_create_occupancy_gridmap()
         self.initial_belief = np.ones_like(self.is_no_obstacle_plan) / np.sum(np.ones_like(self.is_no_obstacle_plan) )
         self.is_language_input = False
         self.t = 0
-        self.started = False
+        self.is_sim_running = False
         self.plan = True
         self.snapshot = False
         self.is_robot_observation = False
+        self.debug()
 
     def read_setup_image_for_plot_plan(self):
-        self.map_plot_original = cv2.imread(f'map/{self.map_name}/map_with_entrance_400X400.png', cv2.IMREAD_UNCHANGED)
-        self.map_plan_original = cv2.imread(f'map/{self.map_name}/map_100X100.png', cv2.IMREAD_UNCHANGED)
-        self.padding_size = 50
-        self.resize_ratio = 4
+        self.map_plot_original = cv2.imread(f'map/{self.map_name}/map_with_entrance_and_label.png', cv2.COLOR_BGRA2BGR)
+        self.map_plan_original = cv2.imread(f'map/{self.map_name}/map_without_entrance_and_label.png', cv2.COLOR_BGRA2BGR)
+        self.padding_size = 100
+        self.resize_ratio = 1
         self.plot_dim = (self.map_plot_original.shape[0] - self.padding_size*2, self.map_plot_original.shape[1] - self.padding_size*2)
         self.plan_dim = (self.map_plan_original.shape[0] - (self.padding_size//self.resize_ratio)*2, self.map_plan_original.shape[1] - (self.padding_size//self.resize_ratio)*2)
         self.map_plot = self.map_plot_original[self.padding_size:self.map_plot_original.shape[0]-self.padding_size,self.padding_size:self.map_plot_original.shape[1]-self.padding_size]
+        self.map_plan = self.map_plan_original[self.padding_size//self.resize_ratio:self.map_plan_original.shape[0]-self.padding_size//self.resize_ratio, self.padding_size//self.resize_ratio:self.map_plan_original.shape[1]-self.padding_size//self.resize_ratio]
         cv2.imwrite(f'map/{self.map_name}/map_plot.png',self.map_plot)
-        self.map_plot = cv2.merge((self.map_plot,self.map_plot,self.map_plot))
+        # self.map_plot = cv2.merge((self.map_plot,self.map_plot,self.map_plot))
+
+    def debug(self):
+        cropped_img = self.map_plan_original[100:400,100:400]
+        cv2.imwrite(f'map/{self.map_name}/debug.png',cropped_img)
 
     def initialize_start_robot_target_position(self):
         self.start_position_robot_plan = (16,16) # initial value
@@ -55,10 +79,15 @@ class SimulationTargetSearch():
         self.start_position_target_plot = (min(self.start_position_target_plan[0]*self.resize_ratio, self.plot_dim[0]-1), min(self.start_position_target_plan[1]*self.resize_ratio, self.plot_dim[1]-1))
         
     def setup_create_occupancy_gridmap(self): 
-        background_value = 255
-        is_no_building_plan = self.map_plan_original[self.padding_size//self.resize_ratio:self.map_plan_original.shape[0]-self.padding_size//self.resize_ratio, self.padding_size//self.resize_ratio:self.map_plan_original.shape[1]-self.padding_size//self.resize_ratio]  == background_value
-        cv2.imwrite(f'map/{self.map_name}/map_plan.png', is_no_building_plan*255)
-        self.is_no_obstacle_plan = is_no_building_plan.astype(int)
+        # background_value = 255
+        gray_img = cv2.cvtColor(self.map_plan, cv2.COLOR_BGR2GRAY)
+        (_, black_and_white_img) = cv2.threshold(gray_img, 200, 255, cv2.THRESH_BINARY)
+        cv2.imwrite(f'map/{self.map_name}/map_plan.png', black_and_white_img)
+        self.is_no_obstacle_plan = (black_and_white_img/255).astype(int) 
+        cv2.imwrite(f'map/{self.map_name}/map_plan.png', self.is_no_obstacle_plan*255)
+        # is_no_building_plan = self.map_plan_original[self.padding_size//self.resize_ratio:self.map_plan_original.shape[0]-self.padding_size//self.resize_ratio, self.padding_size//self.resize_ratio:self.map_plan_original.shape[1]-self.padding_size//self.resize_ratio]  != building_value
+        # cv2.imwrite(f'map/{self.map_name}/map_plan.png', is_no_building_plan*255)
+        # self.is_no_obstacle_plan = is_no_building_plan.astype(int)
         self.grid = Grid(matrix=self.is_no_obstacle_plan)
         self.grid_for_target_path = Grid(matrix=self.is_no_obstacle_plan)
         print(f'plan_dim {self.plan_dim}, plot_dim {self.plot_dim}')
@@ -85,7 +114,7 @@ class SimulationTargetSearch():
     def robot_observation_model(self,target_position, robot_position, false_positive = 0.2, false_negative = 0.2, compute_likelihood = True):
         figure_size = self.plan_dim
         rays = 360
-        step = math.floor(self.radius_fov/3)
+        step = math.floor(self.radius_fov/10)
         fov = np.zeros_like(self.is_no_obstacle_plan)
         fov[robot_position[1],robot_position[0]] = 1
         if not compute_likelihood:
@@ -221,8 +250,9 @@ class SimulationTargetSearch():
         center_y = math.ceil(self.plan_dim[0]/2)
         x, y = np.meshgrid(np.linspace(-center_x-pad_x,pad_x+self.plan_dim[1]-center_x,self.plan_dim[1]+2*pad_x,endpoint=False), np.linspace(-center_y-pad_y,pad_y+self.plan_dim[0]-center_y,self.plan_dim[0]+2*pad_y,endpoint=False))
         dist = np.sqrt(x*x+y*y)
-        sigma, mu = 2.0, 0.0
-        likelihood = np.exp(-( (dist-mu)**2 / ( 2.0 * sigma**2 ) ) )
+        sigma = 2.0
+        mean = 0
+        likelihood = np.exp(-( (dist-mean)**2 / ( 2.0 * sigma**2 ) ) )
         likelihood = likelihood / np.sum(likelihood)
         self.precalculated_gaussian_at_center = likelihood
 
@@ -289,27 +319,33 @@ class SimulationTargetSearch():
             Sigma = 5* self.plan_dim[0] * np.eye(len(self.x)) # noise covariance of gaussain for initial sampling
             wu = 1 / self.n  # initial uniform weights
             L_init = np.linalg.cholesky(Sigma)
-            self.px = []
-            self.pw = []
-            for i in range(self.n):
-                # self.px.append(np.clip(np.dot(L_init, np.random.randn(len(self.x), 1)) + np.array([self.plan_dim[0]/2,self.plan_dim[1]/2,0,0]).reshape(-1,1), np.array([0,0,-100,-100]).reshape(-1,1), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]).reshape(-1,1)))
-                self.px.append(np.clip(np.dot(L_init, np.random.randn(len(self.x), 1)) + np.array([self.plan_dim[0]/2,self.plan_dim[1]/2]).reshape(-1,1), np.array([0,0]).reshape(-1,1), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1]).reshape(-1,1)))
-                self.pw.append(wu)
+            # self.px = []
+            # self.pw = []
+            # for i in range(self.n):
+            #     # self.px.append(np.clip(np.dot(L_init, np.random.randn(len(self.x), 1)) + np.array([self.plan_dim[0]/2,self.plan_dim[1]/2,0,0]).reshape(-1,1), np.array([0,0,-100,-100]).reshape(-1,1), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]).reshape(-1,1)))
+            #     self.px.append(np.clip(np.dot(L_init, np.random.randn(len(self.x), 1)) + np.array([self.plan_dim[0]/2,self.plan_dim[1]/2]).reshape(-1,1), np.array([0,0]).reshape(-1,1), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1]).reshape(-1,1)))
+            #     self.pw.append(wu)
+            self.px = np.random.uniform(low=(0,0), high=(self.plan_dim[1]-1,self.plan_dim[0]-1), size=(self.n,2))
+            self.pw = [[wu]] * self.n
             self.px = np.array(self.px).reshape(-1, len(self.x))
             self.pw = np.array(self.pw).reshape(-1, 1)
-            if np.max(self.px[:,0]) > self.plan_dim[0]-1 or np.max(self.px[:,1]) > self.plan_dim[1]-1:
+            if np.max(self.px[:,0]) > self.plan_dim[1]-1 or np.max(self.px[:,1]) > self.plan_dim[0]-1:
                 raise ValueError('initialized state exceed boundary')
         else:
             # sample from motion model
-            for i in range(self.n):
-                # sample noise for constant velocity model
-                # w = np.dot(self.LQ, np.random.randn(4, 1))
-                # sample noise for random walk model
-                w = np.dot(self.LQ, np.random.randn(len(self.x), 1))
-                # self.px[i, :] = self.constant_velocity_motion_model(self.px[i, :], w).reshape(-1)
-                # self.px[i, :] = np.clip(self.constant_velocity_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0,-100,-100]), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]))
-                # self.px[i, :] = np.clip(self.random_walk_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0,-100,-100]), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]))
-                self.px[i, :] = np.clip(self.sample_particle_random_walk_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0]), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1]))
+            if not self.is_static_target:
+                for i in range(self.n):
+                    # sample noise for constant velocity model
+                    # w = np.dot(self.LQ, np.random.randn(4, 1))
+                    # sample noise for random walk model
+                    w = np.dot(self.LQ, np.random.randn(len(self.x), 1))
+                    # self.px[i, :] = self.constant_velocity_motion_model(self.px[i, :], w).reshape(-1)
+                    # self.px[i, :] = np.clip(self.constant_velocity_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0,-100,-100]), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]))
+                    # self.px[i, :] = np.clip(self.random_walk_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0,-100,-100]), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]))
+                    self.px[i, :] = np.clip(self.sample_particle_random_walk_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0]), np.array([self.plan_dim[1]-1, self.plan_dim[0]-1]))
+            else:
+                # keep the same particles
+                pass
             # update importance weights with measurements
             w = np.zeros([self.n, 1]) 
             position_in_fov_list = self.robot_observation_model(self.current_true_target_position_plan, self.current_robot_position_plan,compute_likelihood=False)
@@ -402,8 +438,6 @@ class SimulationTargetSearch():
         else:
             next_robot_position_plan = self.path[1+self.path_step] # if there is no finding a new path, select the next position in the path
             self.path_step += 1
-        if next_robot_position_plan is None:
-            raise ValueError('no path')
         
         # create image for the graphic interface
         map_plot_with_particle = self.map_plot.copy()
@@ -423,11 +457,12 @@ class SimulationTargetSearch():
         if dist<self.radius_reach:
             print('             reach target')
             self.reach = True
-            self.started = False
+            self.is_sim_running = False
             # plot distance vs time and robot path 
             self.plot_distance_time()
             self.plot_map_plan_with_path()
-            self.save_target_path()
+            if not self.is_static_target:
+                self.save_target_path()
         
         # check if the robot reach the estimated target 
         dist_plan = np.linalg.norm(np.array(self.current_estimated_target_position_plan)-np.array(self.current_robot_position_plan))
@@ -437,7 +472,8 @@ class SimulationTargetSearch():
             self.plan = True
 
         # update the true target position 
-        self.move_target_path_with_goal()
+        if not self.is_static_target:
+            self.move_target_path_with_goal()
         # update robot position 
         self.current_robot_position_plan = next_robot_position_plan
         # save robot position in history list
@@ -458,6 +494,7 @@ class SimulationTargetSearch():
             
     def step_histogram_belief_system(self,update_display=True): 
         print(f'timestep: {self.t}') 
+        self.start_time = time.time()
         # current_true_target_position_plan = self.target_motion_model(1,self.t)
         if self.t == 0:
             self.datetime = datetime.datetime.now()
@@ -465,7 +502,6 @@ class SimulationTargetSearch():
             self.dist_from_target_list = []
             self.add_lang_input_timestep_list = []
             self.robot_position_plan_history = []
-            self.start_time = time.time()
             # initialize robot position (x,y)
             self.current_robot_position_plan = self.start_position_robot_plan
             # initialize target position (x,y)
@@ -473,10 +509,14 @@ class SimulationTargetSearch():
             # initialize posterior
             posterior = self.initial_belief
             self.random_walk_covariance = np.diag([1e-1, 1e-1])
-            self.precalculate_random_walk_gaussian()
+            if not self.is_static_target:
+                self.precalculate_random_walk_gaussian()
         else:
             # propagate belief with dynamic prediction
-            posterior = self.predict_dynamic_random_walk_motion_model(self.prior)
+            if not self.is_static_target:
+                posterior = self.predict_dynamic_random_walk_motion_model(self.prior)
+            else:
+                posterior = self.prior
             # measurement updates
             # collect boolean value from the tickbox button of enable robot observation
             self.is_robot_observation = int(self.is_robot_observation_temp.get())
@@ -506,7 +546,8 @@ class SimulationTargetSearch():
         
         # retrieve estimate target position via MAP. In order to handle point inside buidling, sort all of the point in descending value order
         if self.plan == True:
-            current_estimated_target_position_plan_sorted = np.argsort(posterior, axis=None)[::-1][:self.plan_dim[0]*self.plan_dim[1]] 
+            top_sorted_estimated_target_number = self.plan_dim[0]*self.plan_dim[1]
+            current_estimated_target_position_plan_sorted = np.argsort(posterior, axis=None)[::-1][:top_sorted_estimated_target_number] 
             self.current_estimated_target_position_plan_sorted = [(np.unravel_index(p, posterior.shape)[1], np.unravel_index(p, posterior.shape)[0]) for p in current_estimated_target_position_plan_sorted]
             self.plan = False
             self.find_new_path = True
@@ -515,6 +556,7 @@ class SimulationTargetSearch():
 
         # step and path planning
         if self.find_new_path:
+            print('find new path')
             equal_groups = [[]]
             k = 0
             for i in range(len(self.current_estimated_target_position_plan_sorted)-1):
@@ -532,11 +574,12 @@ class SimulationTargetSearch():
             equal_groups[k].append(last_ind)
             print(f'number of equal groups:{len(equal_groups)}')
             for i in range(len(equal_groups)):
-                # if i< 100:
-                #     print(f'before shuffle equal group:{equal_groups[i]}')
+                print(f'# positions in the equal group {i}: {len(equal_groups[i])}')
+                if i< 2:
+                    print(f'before shuffle equal group 10 samples:{equal_groups[i][:10]}')
                 equal_groups[i] = random.sample(equal_groups[i],len(equal_groups[i]))
-                # if i< 100:
-                #     print(f'after shuffle equal group:{equal_groups[i]}')
+                if i< 2:
+                    print(f'after shuffle equal group 10 samples:{equal_groups[i][:10]}')
             self.current_estimated_target_position_plan_sorted = [ind for equal_group in equal_groups for ind in equal_group]
             path_start = self.grid.node(self.current_robot_position_plan[0], self.current_robot_position_plan[1])
             for current_estimated_target_position_plan in self.current_estimated_target_position_plan_sorted:
@@ -552,23 +595,24 @@ class SimulationTargetSearch():
                     self.find_new_path = False
                     self.current_estimated_target_position_plan = current_estimated_target_position_plan
                     self.path_step += 1
+                    self.timestep_distance_robot = 1 
                     break
                 elif len(self.path) == 1:
                     next_robot_position_plan = self.path[0]
                     self.find_new_path = False
                     self.current_estimated_target_position_plan = current_estimated_target_position_plan
+                    self.timestep_distance_robot = 0
                     break
                 else:
                     pass
         else:
             next_robot_position_plan = self.path[1+self.path_step]
             self.path_step += 1
-        if next_robot_position_plan is None:
-            raise ValueError('no path')
+            self.timestep_distance_robot = 1 
         
         # create image for the graphic interface
         posterior_heatmap = self.create_heatmap(posterior)
-        map_plot_with_heatmap = cv2.addWeighted(posterior_heatmap, 0.5, self.map_plot.copy(), 0.5, 0)
+        map_plot_with_heatmap = cv2.addWeighted(posterior_heatmap, 0.7, self.map_plot.copy(), 0.3, 0)
         cv2.circle(map_plot_with_heatmap,(min(self.current_robot_position_plan[0]*self.resize_ratio,self.plot_dim[0]), min(self.current_robot_position_plan[1]*self.resize_ratio,self.plot_dim[1]-1)),radius=2,color=(255, 200, 0),thickness=-1)
         cv2.circle(map_plot_with_heatmap,(min(self.current_robot_position_plan[0]*self.resize_ratio,self.plot_dim[0]), min(self.current_robot_position_plan[1]*self.resize_ratio,self.plot_dim[1]-1)),radius=self.radius_fov*self.resize_ratio,color=(100, 100, 100),thickness=1)
         cv2.circle(map_plot_with_heatmap,(min(self.current_estimated_target_position_plan[0]*self.resize_ratio,self.plot_dim[0]-1), min(self.current_estimated_target_position_plan[1]*self.resize_ratio,self.plot_dim[1])),radius=2,color=(255, 0, 255),thickness=-1)
@@ -580,11 +624,12 @@ class SimulationTargetSearch():
         if dist<self.radius_reach:
             print('reach target')
             self.reach = True
-            self.started = False
+            self.is_sim_running = False
             # plot distance vs time and robot path 
             self.plot_distance_time()
             self.plot_map_plan_with_path()
-            self.save_target_path()
+            if not self.is_static_target:
+                self.save_target_path()
         
         # check if the robot reach the estimated target (plan target)
         dist_plan = np.linalg.norm(np.array(self.current_estimated_target_position_plan)-np.array(self.current_robot_position_plan))
@@ -593,8 +638,9 @@ class SimulationTargetSearch():
             # replan the path 
             self.plan = True
 
-        # update the true target position 
-        self.move_target_path_with_goal()
+        # update the true target position
+        if not self.is_static_target:
+            self.move_target_path_with_goal()
         # update robot position 
         self.current_robot_position_plan = next_robot_position_plan
         # save robot position in history list
@@ -602,11 +648,7 @@ class SimulationTargetSearch():
         # update next prior
         self.prior = posterior
         self.t += 1
-        elapsed_time = time.time() - self.start_time
-        # calculate velocity of the robot in the simulation for debug
-        sim_velocity = self.t * 4 /elapsed_time
-        print(f'sim velocity {sim_velocity}')
-
+ 
         # update image in the graphic interface
         if update_display:
             B_hm,G_hm,R_hm = cv2.split(map_plot_with_heatmap)
@@ -614,6 +656,7 @@ class SimulationTargetSearch():
             im = Image.fromarray(img_cv_tk)
             self.img_tk = ImageTk.PhotoImage(image=im)
             self.img_label.config(image=self.img_tk)
+        self.timestep_time = time.time() - self.start_time
         if self.snapshot:
             path = f'histogram_belief_system/snapshot/posterior/{self.datetime}'
             if not os.path.exists(path):
@@ -678,7 +721,7 @@ class SimulationTargetSearch():
             start_robot_position_plan = self.random_position_no_obstacle()
             start_target_position_plan = self.random_position_no_obstacle()
             dist = ((start_robot_position_plan[0] - start_target_position_plan[0])**2 + (start_robot_position_plan[1] - start_target_position_plan[1])**2)**0.5
-            if dist < 30:
+            if dist < 50:
                 continue
             self.start_position_robot_plan = start_robot_position_plan
             self.start_position_target_plan = start_target_position_plan
@@ -690,11 +733,16 @@ class SimulationTargetSearch():
             break
 
     def random_position_no_obstacle(self):
-        while True:
-            p = random.randint(0,self.is_no_obstacle_plan.shape[0]-1)
-            q = random.randint(0,self.is_no_obstacle_plan.shape[1]-1)
-            if self.is_no_obstacle_plan[q, p] == 1:
-                return (p,q)
+        # need rework 
+        positions_wih_no_obstacle = np.argwhere(self.is_no_obstacle_plan)
+        random_idx = random.randint(0,positions_wih_no_obstacle.shape[0]-1)
+        random_position = positions_wih_no_obstacle[random_idx]
+        return (random_position[1],random_position[0])
+        # while True:
+        #     p = random.randint(0,self.is_no_obstacle_plan.shape[0]-1)
+        #     q = random.randint(0,self.is_no_obstacle_plan.shape[1]-1)
+        #     if self.is_no_obstacle_plan[q, p] == 1:
+        #         return (p,q)
 
     def random_position_reset_plot(self):
         self.random_position_initial_condition()
@@ -719,29 +767,34 @@ class SimulationTargetSearch():
         self.is_language_input = True
         
     def start(self):
-         if not self.started:
-            print('starting')
-            self.started = True
-            self.animate()
+         if not self.is_sim_running:
+            self.is_sim_running = True
+            self.simulate()
 
-    def animate(self):
-        """Animate the drawing items"""
-        if self.started:
-            if self.system_type == 'histogram_belief_system':
-                print('false')
+    def simulate(self):
+        """Step the simulation"""
+        if self.is_sim_running:
+            if self.is_histogram_belief_system:
                 self.step_histogram_belief_system() 
-            elif self.system_type == 'particle_filter_system':
-                self.step_particle_filter_system()
             else:
-                raise ValueError('invalid system type')
-            self.window.after(10, self.animate)
+                self.step_particle_filter_system()
+            desired_velocity = 42
+            base_delay = 10 # delay for visualization in gui
+            if self.timestep_distance_robot > 0:
+                desired_period = self.timestep_distance_robot  * 1000 / desired_velocity
+                if desired_period - self.timestep_time <= base_delay:
+                    print('computation bottlenck the velocity of robot')
+                delay =  round(max((desired_period - self.timestep_time),base_delay))
+            else:
+                delay = max(self.timestep_time,base_delay)
+            self.window.after(delay, self.simulate)
 
     def pause(self):
-        """Pause the animation"""
-        self.started = False 
+        """Pause the simulation"""
+        self.is_sim_running = False 
 
     def reset(self):
-        self.started = False 
+        self.is_sim_running = False 
         self.plan = True
         self.t = 0
         self.reset_img_plot(first_display=False)
@@ -751,7 +804,7 @@ class SimulationTargetSearch():
 
     def display(self):
         self.window = tk.Tk()
-        self.started = False
+        self.is_sim_running = False
         self.reset_img_plot(first_display=True)
         frame_img_label = tk.Frame(
             master=self.window,
@@ -911,7 +964,7 @@ class SimulationTargetSearch():
         random_button = tk.Button(frame_random_button, text="Random", command=self.random_position_reset_plot)
         self.is_robot_observation_temp = tk.IntVar()
         robot_observation_tickbox = tk.Checkbutton(frame_enable_robot_observation, text='enable robot sensor', variable=self.is_robot_observation_temp)
-        start_button = tk.Button(frame_start_button, text="Start", command=self.start)
+        start_button = tk.Button(frame_start_button, text="Start/Unpause", command=self.start)
         pause_button = tk.Button(frame_pause_button, text="Pause", command=self.pause)
         reset_button = tk.Button(frame_reset_button, text="Reset", command=self.reset)
         snapshot_button = tk.Button(frame_snapshot_button, text="Snapshot", command=self.set_snapshot)
@@ -949,6 +1002,7 @@ class SimulationTargetSearch():
         self.window.mainloop()
 
 if __name__ == "__main__":
-    scenario = SimulationTargetSearch(system_type='histogram_belief_system',map_name='demo')
+    load_map_from_test_dataset__and_re_ratio()
+    scenario = SimulationTargetSearch(is_histogram_belief_system=True,map_name='chula_engineering',is_static_target=True)
     scenario.display()
     scenario.start()
