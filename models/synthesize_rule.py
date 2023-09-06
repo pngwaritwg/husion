@@ -76,13 +76,15 @@ class RuleBasedModel:
         '''
         direction_dependant_rules = ['front']
         if self._spatial_relation in direction_dependant_rules:
-            if kwargs['type'] == 'expert' or kwargs['type'] == 'baseline_sloop':
+            if kwargs['type'] == 'expert' or kwargs['type'] == 'baseline':
                 if building_entrance_coordinate is None:
                     if building_with_entrance_img is None:
                         raise ValueError('cant compute entrance center coordinate')
                     else:
                         building_entrance_coordinate = find_building_entrance_coordinate(building_with_entrance_img)
-            likelihood = self.rule.compute(building_img, building_entrance_coordinate, **kwargs)
+                likelihood = self.rule.compute(building_img, building_entrance_coordinate, **kwargs)
+            elif kwargs['type'] =='baseline_sloop':
+                likelihood = self.rule.compute(building_img, **kwargs)
         else:
             likelihood = self.rule.compute(building_img, **kwargs)
         return likelihood
@@ -288,7 +290,7 @@ class InsideRule():
                 return likelihood
 
 class FrontRule():
-    def compute(self, building_img, building_entrance_coordinate, type='expert', field_coeff=0.5, entrance_coeff=0.3, foref=None):
+    def compute(self, building_img, building_entrance_coordinate=None, type='expert', field_coeff=0.5, entrance_coeff=0.3, foref=None):
         '''
         Returns the near likelihood array in the same dimension as the input building image
 
@@ -441,16 +443,38 @@ class FrontRule():
         
 def test():
     district_name = 'sanamluang'
-    building_number = 2
+    building_number = 3
     path = f'../building_entrance_street_dataset/{district_name}/building/{building_number}.png'
     building_img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     path = f'../building_entrance_street_dataset/{district_name}/building_with_entrance/{building_number}.png'
     building_with_entrance_img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-    model = RuleBasedModel('inside')
-    foref = forefs[district_name][building_number-1]
-    params = {'type':'expert', 'field_coeff':3.0, 'entrance_coeff': 1.0}
-    likelihood = model.compute(building_img)
-    plot_likelihood_over_building(likelihood, building_with_entrance_img)
 
+    # example of inside rule
+    # model = RuleBasedModel('inside')
+    # likelihood = model.compute(building_img)
+
+    # example of 'expert_border' near rule
+    # model = RuleBasedModel('near')
+    # params = {'type':'expert_border', 'field_coeff':1.0}
+    # likelihood = model.compute(building_img, **params)
+    
+    # example of 'expert' front rule
+    model = RuleBasedModel('front')
+    params = {'type':'expert', 'field_coeff':1.0, 'entrance_coeff':1.0}
+    likelihood = model.compute(building_img, building_with_entrance_img, **params)
+
+    # example of 'baseline' front rule
+    model = RuleBasedModel('front')
+    # foref = forefs[district_name][building_number-1]
+    # params = {'type':'baseline', 'field_coeff':1.0, 'entrance_coeff':1.0}
+    # likelihood = model.compute(building_img, building_with_entrance_img, **params)
+
+    # example of 'baseline_sloop' front rule
+    # model = RuleBasedModel('front')
+    # foref = forefs[district_name][building_number-1]
+    # params = {'type':'baseline_sloop', 'field_coeff':1.0, 'foref':foref}
+    # likelihood = model.compute(building_img, **params)
+
+    plot_likelihood_over_building(likelihood, building_with_entrance_img)
 if __name__ == "__main__":
     test()
