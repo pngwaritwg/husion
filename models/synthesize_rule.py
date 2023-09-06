@@ -3,6 +3,19 @@ import numpy as np
 import math
 import random
 
+forefs = {'ladprao_centaragrand':[(0.43627,-0.89981),(0.90055,0.43475),(-0.99817,0.060495)],
+        'central_ratchadamnoen_rd':[(0.20953,-0.97780),(-0.15799,0.98744),(-0.16440,0.98639)],
+        'sanamluang':[(-0.97946,-0.20165),(-0.99439,0.10579),(-0.99827,0.058722),(-0.94450,-0.32852)],
+        'lumphini_sathorn':[(0.32937,-0.94420)],
+        'chongnonsri_sathorn':[(-0.31623,-0.94868),(0.92647,-0.37638),(-0.32852,-0.94450),(0.88897,-0.45796),(0.99940,-0.034701)],
+        'triamudom':[(-0.14655,0.98920),(-0.1520571843,0.98837)],
+        'pratunam':[(-0.12797,0.99178)],
+        'rama3_ratchada':[(0.49401,0.86946),(0.18429,-0.98287),(-0.68536,-0.72820)],
+        'sathorn_naratiwat':[(-0.47628,-0.87929),(00.92468,-0.38075),(0.89443,-0.44721)],
+        'prakanong':[(-0.99948,-0.032241),(-0.11043,-0.99388),(0.041631,0.99913)],
+        'bangken':[(0.50980,-0.86029),(-0.93124,-0.36440)]
+        }
+
 def plot_likelihood_over_building(likelihood, overlayed_img) -> None:
     '''
     Show a likelihood over building  plot 
@@ -63,11 +76,12 @@ class RuleBasedModel:
         '''
         direction_dependant_rules = ['front']
         if self._spatial_relation in direction_dependant_rules:
-            if building_entrance_coordinate is None:
-                if building_with_entrance_img is None:
-                    raise ValueError('cant compute entrance center coordinate')
-                else:
-                    building_entrance_coordinate = find_building_entrance_coordinate(building_with_entrance_img)
+            if kwargs['type'] == 'expert' or kwargs['type'] == 'baseline_sloop':
+                if building_entrance_coordinate is None:
+                    if building_with_entrance_img is None:
+                        raise ValueError('cant compute entrance center coordinate')
+                    else:
+                        building_entrance_coordinate = find_building_entrance_coordinate(building_with_entrance_img)
             likelihood = self.rule.compute(building_img, building_entrance_coordinate, **kwargs)
         else:
             likelihood = self.rule.compute(building_img, **kwargs)
@@ -81,7 +95,7 @@ class NearRule():
             Parameters: 
                     building_img (array): building image only
                     type (str): 3 types: expert_border, exper_convexhull, baseline
-                    field_coeff (float): a gaussian variance scaling term
+                    field_coeff (float) (required for all 3 types): a gaussian variance scaling term
             Returns:
                     likelihood (array): array of likelihood (float), likelihood at each point in the array is ranged between 0 to 1      
         '''
@@ -175,7 +189,7 @@ class FarRule():
             Parameters: 
                     building_img (array): building image only
                     type (str): 3 types: expert_border, exper_convexhull, baseline
-                    field_coeff (float): a gaussian variance scaling term
+                    field_coeff (float) (required for all 3 types): a gaussian variance scaling term
             Returns:
                     likelihood (array): array of likelihood (float), likelihood at each point in the array is ranged between 0 to 1      
         '''
@@ -261,16 +275,17 @@ class InsideRule():
         return likelihood
 
 class FrontRule():
-    def compute(self, building_img, building_entrance_coordinate, type='expert', field_coeff=0.5, entrance_coeff=0.3):
+    def compute(self, building_img, building_entrance_coordinate, type='expert', field_coeff=0.5, entrance_coeff=0.3, foref=None):
         '''
         Returns the near likelihood array in the same dimension as the input building image
 
             Parameters: 
                     building_img (array): building image only
-                    building_entrance_coordinate (list/array/tuple of list/array/tuple): list of entrance coordinate center, each center is in list/array in (x,y) format where x and y origin is in the top left corner of an image 
+                    building_entrance_coordinate (list/array/tuple of list/array/tuple) (required for 'expert and 'baseline' type): list of entrance coordinate center, each center is in list/array in (x,y) format where x and y origin is in the top left corner of an image 
                     type (str): 3 types: expert, baseline_sloop, baseline
-                    field_coeff (float): a gaussian variance scaling term
-                    entrance_coeff (float): a gaussian variance scaling term
+                    field_coeff (float) (required for all 3 types): a gaussian variance scaling term
+                    entrance_coeff (float) (required for 'expert' and 'basline' type): a gaussian variance scaling term
+                    foref (list/tuple/array) (required for 'baseline_sloop' type): a vector with 2 components foref x and foref y indicating the front of a building direction 
             Returns:
                     likelihood (array): array of likelihood (float), likelihood at each point in the array is ranged between 0 to 1      
         '''
@@ -311,7 +326,7 @@ class FrontRule():
                 entrance_width = max(cnt_dim)
                 break
         # calculate direction vectors
-        if type == 'expert' or type == 'baseline_sloop':
+        if type == 'expert':
             for i in range(len(building_cnts)):
                 if hier[0][i,3] == -1:
                     direction_vectors = []
@@ -388,7 +403,7 @@ class FrontRule():
                 for x in range(building_img.shape[1]):
                     position_vector = np.array([x,y]) - np.array(building_cnt_center)
                     position_vector = position_vector / max(1e-8,np.linalg.norm(position_vector))
-                    dot_product = math.cos(math.acos(np.clip(np.dot(position_vector,direction_vectors[chosen_entrance_idx]),-1.0,1.0))) 
+                    dot_product = math.cos(math.acos(np.clip(np.dot(position_vector,foref),-1.0,1.0))) 
                     if dot_product < 0:
                         dot_product = 0
                     # for each (x,y), consider every contour of the building (the outest contour, the first layer of inner contours (if multiple holes exist in a building))
@@ -396,7 +411,6 @@ class FrontRule():
                         if hier[0][i,3] == -1 :
                             dist_outer_border = cv2.pointPolygonTest(building_cnts[i],(x,y),True)  
                         dist_border = cv2.pointPolygonTest(building_cnts[i],(x,y),True)
-                        dist_chosen_entrance = np.linalg.norm(np.array((x,y))-building_entrance_coordinate[chosen_entrance_idx])
                         if dist_outer_border <= 0 and  hier[0][i,3] == -1:            
                             likelihood[y,x] =  dot_product * math.exp(-(dist_border**2) / (field_coeff*field_width**2))
                             break
@@ -413,14 +427,15 @@ class FrontRule():
         return likelihood
         
 def test():
-    district_name = 'sanamluang'
+    district_name = 'ladprao_centaragrand'
     building_number = 3
     path = f'../building_entrance_street_dataset/{district_name}/building/{building_number}.png'
     building_img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     path = f'../building_entrance_street_dataset/{district_name}/building_with_entrance/{building_number}.png'
     building_with_entrance_img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     model = RuleBasedModel('front')
-    params = {'type':'expert', 'field_coeff':3.0, 'entrance_coeff':1.0}
+    foref = forefs[district_name][building_number-1]
+    params = {'type':'expert', 'field_coeff':3.0, 'entrance_coeff': 1.0}
     likelihood = model.compute(building_img, building_with_entrance_img, **params)
     plot_likelihood_over_building(likelihood, building_with_entrance_img)
 
