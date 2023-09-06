@@ -271,8 +271,21 @@ class InsideRule():
                     likelihood (array): array of likelihood (float), likelihood at each point in the array is ranged between 0 to 1      
         '''
         (_, black_white_building_img) = cv2.threshold(building_img, 200, 255, cv2.THRESH_BINARY)
-        likelihood = (black_white_building_img == 0).astype(np.uint8)
-        return likelihood
+        # likelihood = (black_white_building_img == 0).astype(np.uint8)
+        kernel = np.ones((2,2),np.uint8)
+        dilated_edges = cv2.dilate(cv2.Canny(black_white_building_img,0,255),kernel)
+        (building_cnts, hier) = cv2.findContours(dilated_edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        for i in range(len(building_cnts)):
+            if hier[0][i,3] == -1:
+                likelihood = np.zeros(building_img.shape)
+                for x in range(building_img.shape[0]):
+                    for y in range(building_img.shape[1]):
+                        dist_border = cv2.pointPolygonTest(building_cnts[i],(x,y),True)
+                        if dist_border <= 0:            
+                            likelihood[y,x] = 1
+                        else:
+                            likelihood[y,x] = 0
+                return likelihood
 
 class FrontRule():
     def compute(self, building_img, building_entrance_coordinate, type='expert', field_coeff=0.5, entrance_coeff=0.3, foref=None):
@@ -427,16 +440,16 @@ class FrontRule():
         return likelihood
         
 def test():
-    district_name = 'ladprao_centaragrand'
-    building_number = 3
+    district_name = 'sanamluang'
+    building_number = 2
     path = f'../building_entrance_street_dataset/{district_name}/building/{building_number}.png'
     building_img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     path = f'../building_entrance_street_dataset/{district_name}/building_with_entrance/{building_number}.png'
     building_with_entrance_img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-    model = RuleBasedModel('front')
+    model = RuleBasedModel('inside')
     foref = forefs[district_name][building_number-1]
     params = {'type':'expert', 'field_coeff':3.0, 'entrance_coeff': 1.0}
-    likelihood = model.compute(building_img, building_with_entrance_img, **params)
+    likelihood = model.compute(building_img)
     plot_likelihood_over_building(likelihood, building_with_entrance_img)
 
 if __name__ == "__main__":
