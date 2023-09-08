@@ -284,9 +284,9 @@ class InsideRule():
                     for y in range(building_img.shape[1]):
                         dist_border = cv2.pointPolygonTest(building_cnts[i],(x,y),True)
                         if dist_border <= 0:            
-                            likelihood[y,x] = 1
-                        else:
                             likelihood[y,x] = 0
+                        else:
+                            likelihood[y,x] = 1
                 return likelihood
 
 class FrontRule():
