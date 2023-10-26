@@ -18,8 +18,7 @@ import datetime
 import os
 import json
 
-def load_map_from_test_dataset__and_re_ratio():
-    print('loading')
+def load_map_from_test_dataset_and_change_resolution():
     path = '../building_entrance_street_dataset/chula_engineering/overview_map/map_subdistrict_1_only_building.png'
     map_with_building_resolution_4_to_5 = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     map_with_building_resolution_1_to_1 = cv2.resize(map_with_building_resolution_4_to_5, (500,500))
@@ -54,7 +53,6 @@ class SimulationTargetSearch():
         self.plan = True
         self.snapshot = False
         self.is_robot_observation = False
-        self.debug()
 
     def read_setup_image_for_plot_plan(self):
         self.map_plot_original = cv2.imread(f'map/{self.map_name}/map_with_entrance_and_label.png', cv2.COLOR_BGRA2BGR)
@@ -66,11 +64,6 @@ class SimulationTargetSearch():
         self.map_plot = self.map_plot_original[self.padding_size:self.map_plot_original.shape[0]-self.padding_size,self.padding_size:self.map_plot_original.shape[1]-self.padding_size]
         self.map_plan = self.map_plan_original[self.padding_size//self.resize_ratio:self.map_plan_original.shape[0]-self.padding_size//self.resize_ratio, self.padding_size//self.resize_ratio:self.map_plan_original.shape[1]-self.padding_size//self.resize_ratio]
         cv2.imwrite(f'map/{self.map_name}/map_plot.png',self.map_plot)
-        # self.map_plot = cv2.merge((self.map_plot,self.map_plot,self.map_plot))
-
-    def debug(self):
-        cropped_img = self.map_plan_original[100:400,100:400]
-        cv2.imwrite(f'map/{self.map_name}/debug.png',cropped_img)
 
     def initialize_start_robot_target_position(self):
         self.start_position_robot_plan = (16,16) # initial value
@@ -85,9 +78,6 @@ class SimulationTargetSearch():
         cv2.imwrite(f'map/{self.map_name}/map_plan.png', black_and_white_img)
         self.is_no_obstacle_plan = (black_and_white_img/255).astype(int) 
         cv2.imwrite(f'map/{self.map_name}/map_plan.png', self.is_no_obstacle_plan*255)
-        # is_no_building_plan = self.map_plan_original[self.padding_size//self.resize_ratio:self.map_plan_original.shape[0]-self.padding_size//self.resize_ratio, self.padding_size//self.resize_ratio:self.map_plan_original.shape[1]-self.padding_size//self.resize_ratio]  != building_value
-        # cv2.imwrite(f'map/{self.map_name}/map_plan.png', is_no_building_plan*255)
-        # self.is_no_obstacle_plan = is_no_building_plan.astype(int)
         self.grid = Grid(matrix=self.is_no_obstacle_plan)
         self.grid_for_target_path = Grid(matrix=self.is_no_obstacle_plan)
         print(f'plan_dim {self.plan_dim}, plot_dim {self.plot_dim}')
@@ -120,8 +110,8 @@ class SimulationTargetSearch():
         if not compute_likelihood:
             position_in_fov_list = [] 
         for i in range(0, rays + 1, step): 
-            ax = self.SIN_VALUES[i] # Get precalculated value sin(x / (180 / pi))
-            ay = self.COS_VALUES[i] # cos(x / (180 / pi))
+            ax = self.COS_VALUES[i] # Get precalculated value sin(x / (180 / pi))
+            ay = self.SIN_VALUES[i] # cos(x / (180 / pi))
             x = robot_position[0]
             y = robot_position[1]
             for z in range(0,self.radius_fov): # Cast the ray
@@ -194,17 +184,6 @@ class SimulationTargetSearch():
         F = np.array([[1, 0], [0, 1]])
         f = np.dot(F, x) + w.reshape(-1)
         return f.reshape([-1, 1])
-    
-    # def move_target_path_random_walk_gaussian_step(self, target_position):
-    #     sigma = np.diag(np.power([2, 2], 2))
-    #     L = np.linalg.cholesky(sigma)
-    #     check_wall = True
-    #     while check_wall:
-    #         noise = np.dot(L, np.random.randn(2, 1)).reshape(-1)
-    #         x, y = np.clip(target_position + noise,[0,0],[self.plan_dim[0]-1,self.plan_dim[1]-1])
-    #         if self.is_no_obstacle_plan[int(round(y)),int(round(x))] != 0:
-    #             check_wall = False
-    #     return  [int(round(x)),int(round(y))]
 
     def move_target_path_with_goal(self):
         if self.t == 0:
@@ -309,39 +288,24 @@ class SimulationTargetSearch():
             # initialize particles and weights
             posterior = self.initial_belief
             # define particle filter dynamic, noise covariance and parameters
-            # self.Q = np.diag([1e-1, 1e-1, 1e-2, 1e-2]) # motion model noise covariance (constant velocity)
             self.Q = np.diag([1e-1, 1e-1]) # motion model noise covariance (random walk)
             self.LQ = np.linalg.cholesky(self.Q)
-            self.n = 1000 # number of particle filter 
-            # self.x = np.zeros([4, 1]) # state of a particle (x,y,dx,dy) (constant velocity)
-            # self.x = np.zeros([2, 1]) # state of a particle (x,y) (random walk)
+            self.n = 100 # number of particle filter 
             self.x = np.clip(np.dot(3* self.plan_dim[0] * np.eye(2), np.random.randn(2, 1)), np.array([0,0]).reshape(-1,1), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1]).reshape(-1,1)) # state of a particle (x,y) (random walk)
             Sigma = 5* self.plan_dim[0] * np.eye(len(self.x)) # noise covariance of gaussain for initial sampling
             wu = 1 / self.n  # initial uniform weights
-            L_init = np.linalg.cholesky(Sigma)
-            # self.px = []
-            # self.pw = []
-            # for i in range(self.n):
-            #     # self.px.append(np.clip(np.dot(L_init, np.random.randn(len(self.x), 1)) + np.array([self.plan_dim[0]/2,self.plan_dim[1]/2,0,0]).reshape(-1,1), np.array([0,0,-100,-100]).reshape(-1,1), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]).reshape(-1,1)))
-            #     self.px.append(np.clip(np.dot(L_init, np.random.randn(len(self.x), 1)) + np.array([self.plan_dim[0]/2,self.plan_dim[1]/2]).reshape(-1,1), np.array([0,0]).reshape(-1,1), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1]).reshape(-1,1)))
-            #     self.pw.append(wu)
             self.px = np.random.uniform(low=(0,0), high=(self.plan_dim[1]-1,self.plan_dim[0]-1), size=(self.n,2))
             self.pw = [[wu]] * self.n
             self.px = np.array(self.px).reshape(-1, len(self.x))
             self.pw = np.array(self.pw).reshape(-1, 1)
             if np.max(self.px[:,0]) > self.plan_dim[1]-1 or np.max(self.px[:,1]) > self.plan_dim[0]-1:
-                raise ValueError('initialized state exceed boundary')
+                raise ValueError('initialized state exceeds boundary')
         else:
             # sample from motion model
             if not self.is_static_target:
                 for i in range(self.n):
-                    # sample noise for constant velocity model
-                    # w = np.dot(self.LQ, np.random.randn(4, 1))
                     # sample noise for random walk model
                     w = np.dot(self.LQ, np.random.randn(len(self.x), 1))
-                    # self.px[i, :] = self.constant_velocity_motion_model(self.px[i, :], w).reshape(-1)
-                    # self.px[i, :] = np.clip(self.constant_velocity_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0,-100,-100]), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]))
-                    # self.px[i, :] = np.clip(self.random_walk_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0,-100,-100]), np.array([self.plan_dim[0]-1, self.plan_dim[1]-1,100,100]))
                     self.px[i, :] = np.clip(self.sample_particle_random_walk_motion_model(self.px[i, :], w).reshape(-1), np.array([0,0]), np.array([self.plan_dim[1]-1, self.plan_dim[0]-1]))
             else:
                 # keep the same particles
@@ -360,10 +324,6 @@ class SimulationTargetSearch():
                         w[i] = 0.95
                     else:
                         w[i] = 0.05
-            # print(f'check max of 1st state: {np.max(self.px[:,0])}')
-            # print(f'check max of 2nd state: {np.max(self.px[:,1])}')
-            # print(f'check min of particle weight: {np.min(self.pw)}')
-            # print(f'check max of particle weight: {np.max(self.pw)}')
             # update and normalize weights
             self.pw = np.multiply(self.pw, w)  
             self.pw = self.pw / np.sum(self.pw)
@@ -374,7 +334,6 @@ class SimulationTargetSearch():
             # check boolean value from the insert button of language input
             if self.is_language_input:
                 print('fusing language input')
-                # posterior = posterior * self.dummy_human_observation_model(mode='positive',center=current_true_target_position_plan)
                 human_likelihood = self.human_observation_model(spatial_relation=self.spatial_relation,landmark=self.landmark)
                 for i in range(self.n):
                     w[i] = human_likelihood[round(self.px[i,1]),round(self.px[i,0])]
@@ -390,6 +349,7 @@ class SimulationTargetSearch():
                 self.plan = True
                 posterior = posterior/np.sum(posterior)
                 self.add_lang_input_timestep_list.append((self.t,self.is_negative_input))
+            self.pw = np.clip(self.pw, 1e-15, 1e15)
             # retrieve estimate target position via MAP
             self.x = self.px[np.argmax(self.pw.reshape(-1)),:] 
             # compute effective number of particles
@@ -427,17 +387,20 @@ class SimulationTargetSearch():
                     self.find_new_path = False # always prevent finding a new path unless further condition for planning exists
                     self.current_estimated_target_position_plan = current_estimated_target_position_plan
                     self.path_step += 1
+                    self.timestep_distance_robot = 1 
                     break
                 elif len(self.path) == 1: # the start and stop position is the same resulting in a path include only a point
                     next_robot_position_plan = self.path[0] # robot repeat its position 
                     self.find_new_path = False # always prevent finding a new path unless further condition for planning exists
                     self.current_estimated_target_position_plan = current_estimated_target_position_plan
+                    self.timestep_distance_robot = 0
                     break
                 else:
                     pass
         else:
             next_robot_position_plan = self.path[1+self.path_step] # if there is no finding a new path, select the next position in the path
             self.path_step += 1
+            self.timestep_distance_robot = 1 
         
         # create image for the graphic interface
         map_plot_with_particle = self.map_plot.copy()
@@ -446,10 +409,7 @@ class SimulationTargetSearch():
         cv2.circle(map_plot_with_particle,(min(self.current_estimated_target_position_plan[0]*self.resize_ratio,self.plot_dim[0]-1), min(self.current_estimated_target_position_plan[1]*self.resize_ratio,self.plot_dim[1])),radius=2,color=(100, 255, 0),thickness=-1)
         cv2.circle(map_plot_with_particle,(min(self.current_true_target_position_plan[0]*self.resize_ratio,self.plot_dim[0]-1), min(self.current_true_target_position_plan[1]*self.resize_ratio,self.plot_dim[1]-1)),radius=2,color=(0, 0, 0),thickness=-1)
         for i in range(self.n):
-            # print(f'check radius: {6 - min((round(math.log10(1e-3/self.pw[i])),4))}')
-            # particle_radius = 6 - min((round(math.log10(1e-3/self.pw[i])),4))
             particle_color = 25 * min((round(math.log10(1e-3/self.pw[i])),10)) # the bigger the weight, the more color intensity 
-            # print(f'particle position: {(min(round(self.px[i][0])*self.resize_ratio,self.plot_dim[0]), min(round(self.px[i][1])*self.resize_ratio,self.plot_dim[1]-1))}')
             cv2.circle(map_plot_with_particle,(min(round(self.px[i][0])*self.resize_ratio,self.plot_dim[0]), min(round(self.px[i][1])*self.resize_ratio,self.plot_dim[1]-1)),radius=1,color=(particle_color, particle_color, 255),thickness=cv2.FILLED)
         # check if the robot reach the target 
         dist = np.linalg.norm(np.array(self.current_true_target_position_plan)-np.array(self.current_robot_position_plan))
@@ -491,6 +451,7 @@ class SimulationTargetSearch():
             im = Image.fromarray(img_cv_tk)
             self.img_tk = ImageTk.PhotoImage(image=im)
             self.img_label.config(image=self.img_tk)
+        self.timestep_time = time.time() - self.start_time
             
     def step_histogram_belief_system(self,update_display=True): 
         print(f'timestep: {self.t}') 
@@ -528,7 +489,6 @@ class SimulationTargetSearch():
             # check boolean value from the insert button of language input
             if self.is_language_input:
                 print('fusing language input')
-                # posterior = posterior * self.dummy_human_observation_model(mode='positive',center=current_true_target_position_plan)
                 posterior = posterior * self.human_observation_model(spatial_relation=self.spatial_relation,landmark=self.landmark)
                 self.is_language_input = False
                 # if insert the language input, replan the path of a robot
@@ -572,14 +532,8 @@ class SimulationTargetSearch():
                     equal_groups.append([])
             last_ind = self.current_estimated_target_position_plan_sorted[len(self.current_estimated_target_position_plan_sorted)-1]
             equal_groups[k].append(last_ind)
-            print(f'number of equal groups:{len(equal_groups)}')
             for i in range(len(equal_groups)):
-                print(f'# positions in the equal group {i}: {len(equal_groups[i])}')
-                if i< 2:
-                    print(f'before shuffle equal group 10 samples:{equal_groups[i][:10]}')
                 equal_groups[i] = random.sample(equal_groups[i],len(equal_groups[i]))
-                if i< 2:
-                    print(f'after shuffle equal group 10 samples:{equal_groups[i][:10]}')
             self.current_estimated_target_position_plan_sorted = [ind for equal_group in equal_groups for ind in equal_group]
             path_start = self.grid.node(self.current_robot_position_plan[0], self.current_robot_position_plan[1])
             for current_estimated_target_position_plan in self.current_estimated_target_position_plan_sorted:
@@ -622,21 +576,26 @@ class SimulationTargetSearch():
         dist = np.linalg.norm(np.array(self.current_true_target_position_plan)-np.array(self.current_robot_position_plan))
         self.dist_from_target_list.append(dist*4) #1 plan grid = 4 m
         if dist<self.radius_reach:
-            print('reach target')
-            self.reach = True
-            self.is_sim_running = False
-            # plot distance vs time and robot path 
-            self.plot_distance_time()
-            self.plot_map_plan_with_path()
-            if not self.is_static_target:
-                self.save_target_path()
+            position_in_fov_list = self.robot_observation_model(self.current_true_target_position_plan, self.current_robot_position_plan, compute_likelihood=False)
+            if (self.current_true_target_position_plan[0],self.current_true_target_position_plan[1]) in position_in_fov_list:
+                print('reach target')
+                self.reach = True
+                self.is_sim_running = False
+                # plot distance vs time and robot path 
+                self.plot_distance_time()
+                self.plot_map_plan_with_path()
+                if not self.is_static_target:
+                    self.save_target_path()
+                self.save_robot_path()
         
         # check if the robot reach the estimated target (plan target)
         dist_plan = np.linalg.norm(np.array(self.current_estimated_target_position_plan)-np.array(self.current_robot_position_plan))
         if dist_plan<self.radius_reach:
-            print('reach plan')
-            # replan the path 
-            self.plan = True
+            position_in_fov_list = self.robot_observation_model(self.current_true_target_position_plan, self.current_robot_position_plan, compute_likelihood=False)
+            if (self.current_estimated_target_position_plan[0],self.current_estimated_target_position_plan[1]) in position_in_fov_list:
+                print('reach plan')
+                # replan the path 
+                self.plan = True
 
         # update the true target position
         if not self.is_static_target:
@@ -703,6 +662,13 @@ class SimulationTargetSearch():
             os.makedirs(path)
         with open(path+f'/{self.start_position_robot_plan}_{self.start_position_target_plan}_{len(self.add_lang_input_timestep_list)}_{self.is_robot_observation}.json', "w") as file:
             json.dump(self.target_position_plan_history, file)
+    
+    def save_robot_path(self):
+        path = f'{self.system_type}/robot_path_plan_history/{self.datetime}'
+        if not os.path.exists(path):
+            os.makedirs(path)
+        with open(path+f'/{self.start_position_robot_plan}_{self.start_position_target_plan}_{len(self.add_lang_input_timestep_list)}_{self.is_robot_observation}.json', "w") as file:
+            json.dump(self.robot_position_plan_history, file)
 
     def reset_img_plot(self,first_display):
         map_plot_with_target_robot_start = cv2.circle(self.map_plot.copy(),self.start_position_robot_plot,radius=2,color=(255, 200, 0),thickness=-1)
@@ -733,16 +699,10 @@ class SimulationTargetSearch():
             break
 
     def random_position_no_obstacle(self):
-        # need rework 
         positions_wih_no_obstacle = np.argwhere(self.is_no_obstacle_plan)
         random_idx = random.randint(0,positions_wih_no_obstacle.shape[0]-1)
         random_position = positions_wih_no_obstacle[random_idx]
         return (random_position[1],random_position[0])
-        # while True:
-        #     p = random.randint(0,self.is_no_obstacle_plan.shape[0]-1)
-        #     q = random.randint(0,self.is_no_obstacle_plan.shape[1]-1)
-        #     if self.is_no_obstacle_plan[q, p] == 1:
-        #         return (p,q)
 
     def random_position_reset_plot(self):
         self.random_position_initial_condition()
@@ -772,7 +732,6 @@ class SimulationTargetSearch():
             self.simulate()
 
     def simulate(self):
-        """Step the simulation"""
         if self.is_sim_running:
             if self.is_histogram_belief_system:
                 self.step_histogram_belief_system() 
@@ -790,7 +749,6 @@ class SimulationTargetSearch():
             self.window.after(delay, self.simulate)
 
     def pause(self):
-        """Pause the simulation"""
         self.is_sim_running = False 
 
     def reset(self):
@@ -1002,7 +960,7 @@ class SimulationTargetSearch():
         self.window.mainloop()
 
 if __name__ == "__main__":
-    load_map_from_test_dataset__and_re_ratio()
-    scenario = SimulationTargetSearch(is_histogram_belief_system=True,map_name='chula_engineering',is_static_target=True)
+    load_map_from_test_dataset_and_change_resolution()
+    scenario = SimulationTargetSearch(is_histogram_belief_system=False,map_name='chula_engineering',is_static_target=True)
     scenario.display()
     scenario.start()
