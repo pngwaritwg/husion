@@ -15,7 +15,7 @@ import random
 import scipy
 from scipy import stats
 from particle_filter import ParticleFilter
-from historgram_belief import HistogramBelief
+from histogram_belief import HistogramBelief
 from robot_sensor_model import RobotSensorModel
 import datetime
 import os
@@ -34,7 +34,7 @@ def load_map_from_test_dataset_and_change_resolution():
     cv2.imwrite(path, map_with_building_street_and_all_entrances_resolution_1_to_1)
 
 class SimulationTargetSearch():
-    def __init__(self,is_histogram_belief_system=True,map_name='demo',is_static_target=True) -> None:
+    def __init__(self,is_histogram_belief_system=True, map_name='demo', is_static_target=True) -> None:
         self.is_histogram_belief_system = is_histogram_belief_system
         if is_histogram_belief_system:
             self.system_type = 'histogram_belief_system'
@@ -58,10 +58,10 @@ class SimulationTargetSearch():
         self.map_plan_original = cv2.imread(f'map/{self.map_name}/map_without_entrance_and_label.png', cv2.COLOR_BGRA2BGR)
         self.padding_size = 100
         self.resize_ratio = 1
-        self.plot_dim = (self.map_plot_original.shape[0] - self.padding_size*2, self.map_plot_original.shape[1] - self.padding_size*2)
-        self.plan_dim = (self.map_plan_original.shape[0] - (self.padding_size//self.resize_ratio)*2, self.map_plan_original.shape[1] - (self.padding_size//self.resize_ratio)*2)
-        self.map_plot = self.map_plot_original[self.padding_size:self.map_plot_original.shape[0]-self.padding_size,self.padding_size:self.map_plot_original.shape[1]-self.padding_size]
-        self.map_plan = self.map_plan_original[self.padding_size//self.resize_ratio:self.map_plan_original.shape[0]-self.padding_size//self.resize_ratio, self.padding_size//self.resize_ratio:self.map_plan_original.shape[1]-self.padding_size//self.resize_ratio]
+        self.plot_dim = (self.map_plot_original.shape[0]-self.padding_size*2, self.map_plot_original.shape[1]-self.padding_size*2)
+        self.plan_dim = (self.map_plan_original.shape[0]-(self.padding_size//self.resize_ratio)*2, self.map_plan_original.shape[1]-(self.padding_size//self.resize_ratio)*2)
+        self.map_plot = self.map_plot_original[self.padding_size : self.map_plot_original.shape[0]-self.padding_size, self.padding_size : self.map_plot_original.shape[1]-self.padding_size]
+        self.map_plan = self.map_plan_original[self.padding_size//self.resize_ratio : self.map_plan_original.shape[0]-self.padding_size//self.resize_ratio, self.padding_size//self.resize_ratio : self.map_plan_original.shape[1]-self.padding_size//self.resize_ratio]
         cv2.imwrite(f'map/{self.map_name}/map_plot.png',self.map_plot)
 
     def setup_start_robot_target_position(self):
